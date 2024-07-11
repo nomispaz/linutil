@@ -54,6 +54,8 @@ type Tui struct {
 
 	// save the configs in the Tui-structure itself
 	configs map[string]string
+	// home of the curent user
+	userhome string
 }
 
 // first initialization of tui
@@ -89,6 +91,7 @@ func (t *Tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// enter selection for operational mode --> remove all prior selections and the operational mode
 		case "m":
+			// return to mode selection Reset all selections
 			t.listitems = []string{"git online", "git offline", "browser"}
 			t.selected = make(map[int]string)
 			t.mode = ""
@@ -98,32 +101,34 @@ func (t *Tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				    "- Enter : execute selected item\n"
 
 		case "c":
+			// if in mode git online, clone the selected repositories
 			if t.mode == "git online" {
 				command := "echo cloning repository "
 				for i := range t.selected {
 					command += t.selected[i] + 
-					"; git clone https://github.com/nomispaz/" +
+					"; git clone https://github.com/" +
+					t.configs["gituser"]+ "/" +
 					t.selected[i] +
-					" /home/simonheise/test/" +
+					" " + t.configs["gitfolder"] + "/" +
 					t.selected[i] +
 					"; "
 				}
 				return t,tea.ExecProcess(exec.Command("bash", "-c", command), nil)
-								//cmdArrayIdx := 0
-				//for i := range t.selected {
-				//	cmdArray[cmdArrayIdx] = "git clone https://github.com/" + t.selected[i] + " /home/simonheise/test/" + t.selected[i]
-				//	cmdArrayIdx += 1
-				//}
-				//TuiState = 0
-				//return t, tea.Quit
-
 			}
 
 		case "p":
+			// if in mode git offline, push selected repositories
 			if t.mode == "git offline" {
 				command := "echo pushing repository "
 				for i := range t.selected {
-					command += t.selected[i] + "; cd /home/simonheise/git_repos/" + t.selected[i] + "; git add .; git commit -m " + string(i) + "; git push; "
+					command += t.selected[i] + 
+						"; cd " +
+						t.configs["gitfolder"] + "/" +
+						t.selected[i] + 
+						"; git add .; " +
+						"git commit -m " +
+						"'pushed by linutil'" + 
+						"; git push; "
 				}
 				return t, tea.ExecProcess(exec.Command("bash", "-c", command),nil)
 			}
@@ -326,9 +331,13 @@ func getGitRepo() tea.Msg {
 // main function
 func main() {
 
+	userhome, _ := os.UserHomeDir()
+
 	m := initTui()
 	m.footer += "- q     : quit\n"
 	m.footer += "- Enter : execute selected item\n"
+
+	m.userhome = userhome
 
 	TuiState = 1
 
