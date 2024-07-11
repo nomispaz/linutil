@@ -99,21 +99,31 @@ func (t *Tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "c":
 			if t.mode == "git online" {
-				cmdArrayIdx := 0
+				command := "echo cloning repository "
 				for i := range t.selected {
-					cmdArray[cmdArrayIdx] = "git clone https://github.com/" + t.selected[i] + " /home/simonheise/test/" + t.selected[i]
-					cmdArrayIdx += 1
+					command += t.selected[i] + 
+					"; git clone https://github.com/nomispaz/" +
+					t.selected[i] +
+					" /home/simonheise/test/" +
+					t.selected[i] +
+					"; "
 				}
-				TuiState = 0
-				return t, tea.Quit
+				return t,tea.ExecProcess(exec.Command("bash", "-c", command), nil)
+								//cmdArrayIdx := 0
+				//for i := range t.selected {
+				//	cmdArray[cmdArrayIdx] = "git clone https://github.com/" + t.selected[i] + " /home/simonheise/test/" + t.selected[i]
+				//	cmdArrayIdx += 1
+				//}
+				//TuiState = 0
+				//return t, tea.Quit
 
 			}
 
 		case "p":
 			if t.mode == "git offline" {
-				command := ""
+				command := "echo pushing repository "
 				for i := range t.selected {
-					command += "echo pushing " + t.selected[i] + "; cd /home/simonheise/git_repos/" + t.selected[i] + "; git add .; git commit -m " + string(i) + "; git push; "
+					command += t.selected[i] + "; cd /home/simonheise/git_repos/" + t.selected[i] + "; git add .; git commit -m " + string(i) + "; git push; "
 				}
 				return t, tea.ExecProcess(exec.Command("bash", "-c", command),nil)
 			}
