@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"os"
@@ -11,14 +10,6 @@ import (
 
 //////////////////////////////////////////////////////////////////////////////////
 // global variables
-
-// TuiState is used to determine if the program should be stopped completely or just the tui to be interrupted
-// -1 : close program
-//
-//	0 : interrupt tui
-//	1 : restart tui
-var TuiState int
-
 var cmdArray [100]string
 
 type updateMsg struct {
@@ -56,6 +47,9 @@ type Tui struct {
 	configs map[string]string
 	// home of the curent user
 	userhome string
+
+	// saves the current folder for the browser-mode
+	curfolder string
 }
 
 // first initialization of tui
@@ -65,6 +59,7 @@ func initTui() (t Tui) {
 		selected:  make(map[int]string),
 		header:    "nomispaz linutil: first select the operation mode.\n\n",
 		footer:    "\nAvailable functions\n",
+		curfolder: "",
 	}
 }
 
@@ -99,6 +94,40 @@ func (t *Tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.footer  = "\nAvailable functions\n" +
 				    "- q     : quit\n" +
 				    "- Enter : execute selected item\n"
+
+		case "e":
+			// execute file
+			if t.mode == "browser" {
+				command := ""
+				for i := range t.selected {
+					selectedfile := t.curfolder + "/" + t.selected[i]
+					command += "chmod +x " +
+					selectedfile +
+					"; " +
+					selectedfile +
+					"; read -n 1 -s -r -p 'Press key to continue.'; clear; "
+				}
+			return t,tea.ExecProcess(exec.Command("bash", "-c", command), nil)
+			}
+
+		case "b":
+			// if in browser-mode, one level up
+			if t.mode == "browser" {
+				lastInd := strings.LastIndex(t.curfolder, "/")
+				t.curfolder = t.curfolder[:lastInd]
+
+				command := "ls " + t.curfolder
+			
+				footer := "\nAvailable functions\n" +
+					"- Enter : open selected folder or file\n" +
+					"- b     : one level up\n" +
+					"- e     : execute selected file\n" +
+					"- m     : return to mode selection\n" +
+					"- q     : quit"
+				return t, tea.Cmd(func() tea.Msg {
+					return runCmd(command, footer)
+				})
+			}
 
 		case "c":
 			// if in mode git online, clone the selected repositories
@@ -135,7 +164,6 @@ func (t *Tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			
 		// These keys should exit the program.
 		case "ctrl+c", "q":
-			TuiState = -1
 			return t, tea.Quit
 
 		// The "up" keys move the cursor up
@@ -169,26 +197,52 @@ func (t *Tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if t.mode == "git online" {
-				return t, tea.Cmd(getGitRepo)
+				// get online repositories
+				command := "curl https://api.github.com/users/nomispaz/repos | grep full_name | cut -d':' -f 2 | cut -d'\"' -f 2 | cut -d'/' -f 2"
+				footer := "\nAvailable functions\n" +
+					"- c     : clone selected repos\n" +
+					"- m     : return to mode selection\n" +
+					"- q     : quit"
+
+				return t, tea.Cmd(func() tea.Msg {
+					return runCmd(command, footer)
+				})
 			}
 			if t.mode == "git offline" {
+				// get repositories already downloaded to gitfolder
+				command := "ls " +
+					t.configs["gitfolder"]
+				footer := "\nAvailable functions\n" +
+					"- p     : push selected repos\n" +
+					"- m     : return to mode selection\n" +
+					"- q     : quit"
+
 				return t, tea.Cmd(func() tea.Msg {
-					cmd, _ := exec.Command("bash", "-c", "ls /home/simonheise/git_repos/").Output()
-					// convert result byte to string and split at newline
-					result := string(cmd)
-					result_split := strings.Fields(result)
-					return updateMsg {
-						listitems: result_split,
-						selected:  make(map[int]string),
-						cursor: 0,
-						footer: "\nAvailable functions\n" +
-							"- p     : push selected repos\n" +
-							"- m     : return to mode selection\n" +
-							"- q     : quit",
-					}})
-				// return t, tea.ExecProcess(exec.Command("nvim", "/home/simonheise/test.sh"),nil)
+					return runCmd(command, footer)
+				})
 			}
-			
+			if t.mode == "browser" {
+				command := "ls "
+				if t.curfolder == "" {
+					t.curfolder = t.configs["defaultfolder"]
+					command += t.curfolder
+				} else {
+					for i := range t.selected {
+						t.curfolder = t.curfolder + "/" +
+						t.selected[i]
+						command += t.curfolder
+					}
+				}
+				footer := "\nAvailable functions\n" +
+					"- Enter : open selected folder or file\n" +
+					"- b     : one level up\n" +
+					"- e     : execute selected file\n" +
+					"- m     : return to mode selection\n" +
+					"- q     : quit"
+				return t, tea.Cmd(func() tea.Msg {
+					return runCmd(command, footer)
+				})
+			}
 		}
 	
 	}
@@ -228,53 +282,6 @@ func (t *Tui) View() string {
 
 //////////////////////////////////////////////////////////////////////////////////
 
-// run command
-func runCommand() {
-	command := ""
-
-	for idx := range len(cmdArray) {
-		if cmdArray[idx] != "" {
-			command += cmdArray[idx] + "; "
-		} else {
-			break
-		}
-	}
-
-	cmd := exec.Command("bash", "-c", command)
-
-	// get a pipe to read from standard output
-	stdout, _ := cmd.StdoutPipe()
-
-	// Use the same pipe for standard error
-	cmd.Stderr = cmd.Stdout
-
-	// Make a new channel which will be used to ensure we get all output
-	done := make(chan struct{})
-
-	// Create a scanner which scans stdout in a line-by-line fashion
-	cmd_scanner := bufio.NewScanner(stdout)
-
-	// Use the scanner to scan the output line by line and log it
-	// It's running in a goroutine so that it doesn't block
-	go func() {
-		// Read line by line and process it
-		for cmd_scanner.Scan() {
-			line := cmd_scanner.Text()
-			fmt.Println(line)
-		}
-		// We're all done, unblock the channel
-		done <- struct{}{}
-	}()
-
-	cmd.Run()
-
-	// Wait for all output to be processed
-	<-done
-
-	// remove previous command array and reinitialize that array
-	cmdArray = [100]string{}
-}
-
 // parseconfigfile: read config file from users configdir and parse settings
 func parseconfigfile() map[string]string {
 
@@ -283,7 +290,7 @@ func parseconfigfile() map[string]string {
 	configdir, err := os.UserConfigDir()
 
 	if err != nil {
-		fmt.Println("No configfile found\n")
+		fmt.Println("No configfile found")
 	}
 	
 	fileContent, err := os.ReadFile(configdir + "/linutil/config")
@@ -303,10 +310,9 @@ func parseconfigfile() map[string]string {
 
 	return configs
 }
-
-// get entries of git user
-func getGitRepo() tea.Msg {
-	cmd, err := exec.Command("bash", "-c", "curl https://api.github.com/users/nomispaz/repos | grep full_name | cut -d':' -f 2 | cut -d'\"' -f 2 | cut -d'/' -f 2").Output()
+// used to run commands that are parsed and returned to update the view
+func runCmd(command string, footer string) tea.Msg {
+	cmd, err := exec.Command("bash", "-c", command).Output()
 	if err != nil {
 		panic(err)
 	}
@@ -319,11 +325,8 @@ func getGitRepo() tea.Msg {
 		listitems: result_split,
 		selected:  make(map[int]string),
 		cursor: 0,
-		footer: "\nAvailable functions\n" +
-			"- c     : clone selected repos\n" +
-			"- m     : return to mode selection\n" +
-			"- q     : quit",
-		}
+		footer: footer,
+	}
 }
 
 // ////////////////////////////////////////////////////////////////////////////////
@@ -339,24 +342,10 @@ func main() {
 
 	m.userhome = userhome
 
-	TuiState = 1
-
-	for {
-		if TuiState == 1 {
-			p := tea.NewProgram(&m)
-			_, err := p.Run()
-			if err != nil {
-				fmt.Printf("Program ended unexpectedly due to: %v", err)
-				os.Exit(1)
-			}
-			if TuiState == 0 {
-				runCommand()
-				TuiState = 1
-			}
-			if TuiState == -1 {
-				break
-			}
-		}
-
+	p := tea.NewProgram(&m)
+	_, err := p.Run()
+	if err != nil {
+		fmt.Printf("Program ended unexpectedly due to: %v", err)
+		os.Exit(1)
 	}
 }
