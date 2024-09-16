@@ -255,7 +255,7 @@ func (t *Tui) View() string {
 	// The header
 	s := t.header
 
-	// Iterate over our choices
+	// Iterate over listitems
 	for i, choice := range t.listitems {
 
 		// Is the cursor pointing at this choice?
