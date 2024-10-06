@@ -1,351 +1,184 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
-	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 )
 
-//////////////////////////////////////////////////////////////////////////////////
-// global variables
-var cmdArray [100]string
-
-type updateMsg struct {
-	// array to save items that can be selected in a displayed list
-	listitems []string
-	// map to contain the selected items
-	selected map[int]string
-	// position of the cursor
-	cursor int
-	// header
-	header string
-	// footer
-	footer string
+type State struct {
+	password string
+	command  string
 }
-
-//////////////////////////////////////////////////////////////////////////////////
-// Tui definition and functions
-
-// define Tui structure
 type Tui struct {
-	// array to save items that can be selected in a displayed list
-	listitems []string
-	// map to contain the selected items
-	selected map[int]string
-	// position of the cursor
-	cursor int
-	// mode defines if git online to clone, git offline to push or browser to browse files is active
-	mode string
-	// string for the header
-	header string
-	//string for the footer
-	footer string
+	state State
 
-	// save the configs in the Tui-structure itself
-	configs map[string]string
-	// home of the curent user
-	userhome string
-
-	// saves the current folder for the browser-mode
-	curfolder string
+	app             *tview.Application
+	flex            *tview.Flex
+	flexTop         *tview.Flex
+	flexBottom      *tview.Flex
+	flexLeftCol     *tview.Flex
+	flexRightCol    *tview.Flex
+	modal           *tview.Modal
+	pages           *tview.Pages
+	menu            *tview.List
+	contents        *tview.TextView
+	password_prompt *tview.InputField
 }
 
-// first initialization of tui
-func initTui() (t Tui) {
-	return Tui{
-		listitems: []string{"git online", "git offline", "browser"},
-		selected:  make(map[int]string),
-		header:    "nomispaz linutil: first select the operation mode.\n\n",
-		footer:    "\nAvailable functions\n",
-		curfolder: "",
+func (t *Tui) Init() {
+
+	t.state.password = "none"
+	t.state.command = "none"
+
+	t.app = tview.NewApplication()
+	t.contents = tview.NewTextView()
+	t.menu = tview.NewList()
+	t.flex = tview.NewFlex()
+	t.flexLeftCol = tview.NewFlex()
+	t.flexRightCol = tview.NewFlex()
+	t.pages = tview.NewPages()
+	t.password_prompt = tview.NewInputField()
+}
+
+func (t *Tui) SetupTUI() {
+
+	t.contents.SetTextAlign(tview.AlignLeft).SetText("").SetDynamicColors(false).SetTextColor(tcell.ColorSlateGrey)
+
+	t.password_prompt.SetLabel("Enter root password: ")
+	t.password_prompt.SetFinishedFunc(func(key tcell.Key) {
+		t.state.password = t.password_prompt.GetText()
+		t.pages.SendToFront("flex")
+
+	})
+
+	// Returns a new primitive which puts the provided primitive in the center and
+	// sets its size to the given width and height.
+	modal := func(p tview.Primitive, width, height int) tview.Primitive {
+		return tview.NewFlex().
+			AddItem(nil, 0, 1, false).
+			AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+				AddItem(nil, 0, 1, false).
+				AddItem(p, height, 1, true).
+				AddItem(nil, 0, 1, false), width, 1, true).
+			AddItem(nil, 0, 1, false)
 	}
+
+	t.flexLeftCol.SetDirection(tview.FlexRow)
+	t.flexLeftCol.AddItem(t.menu, 0, 100, true).SetBorder(true)
+	t.flexRightCol.SetDirection(tview.FlexRow)
+	t.flexRightCol.AddItem(t.contents, 0, 100, false).SetBorder(true)
+
+	t.flex.SetDirection(tview.FlexColumn).
+		AddItem(t.flexLeftCol, 0, 1, false).
+		AddItem(t.flexRightCol, 0, 3, false)
+
+	t.pages.
+		AddPage("password", modal(t.password_prompt, 40, 10), true, true).
+		AddPage("flex", t.flex, true, true)
+
+	t.pages.SendToFront("flex")
 }
 
-// Perform some initial I/O, for now, parse the config file 
-func (t *Tui) Init() tea.Cmd {
-	t.configs = parseconfigfile()
-	return nil
-}
+func (t *Tui) handle_sudo_cmd() {
+	t.pages.SendToFront("password")
+	t.app.ForceDraw()
 
-func (t *Tui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
+	// wait for password to be entered
+	go func() {
+		for {
+			if t.state.password != "none" {
 
-	case updateMsg:
-		t.selected = msg.selected
-		t.listitems = msg.listitems
-		t.cursor = msg.cursor
-		t.footer = msg.footer
+				var c = make(chan string)
+				go execCmd(c, fmt.Sprintf("echo %s | sudo -S ls -l", t.state.password))
+				//go execCmd(c, "pushd /home/simonheise/git_repos/nompac/overlays/tuxedo-drivers-dkms/; makepkg -cCsrf --skippgpcheck; popd")
+				var output = ""
 
-	// Is it a key press?
-	case tea.KeyMsg:
+				for msg := range c {
 
-		// What was the actual key pressed?
-		switch msg.String() {
+					if msg == "[sudo] password for root: Sorry, try again." {
+						t.contents.SetText("Password was not correct, retry.")
+						t.state.password = "none"
+						t.app.ForceDraw()
+						break
 
-		// enter selection for operational mode --> remove all prior selections and the operational mode
-		case "m":
-			// return to mode selection Reset all selections
-			t.listitems = []string{"git online", "git offline", "browser"}
-			t.selected = make(map[int]string)
-			t.mode = ""
-			t.cursor = 0
-			t.footer  = "\nAvailable functions\n" +
-				    "- q     : quit\n" +
-				    "- Enter : execute selected item\n"
-
-		case "e":
-			// execute file
-			if t.mode == "browser" {
-				command := ""
-				for i := range t.selected {
-					selectedfile := t.curfolder + "/" + t.selected[i]
-					command += "chmod +x " +
-					selectedfile +
-					"; " +
-					selectedfile +
-					"; read -n 1 -s -r -p 'Press key to continue.'; clear; "
-				}
-			return t,tea.ExecProcess(exec.Command("bash", "-c", command), nil)
-			}
-
-		case "b":
-			// if in browser-mode, one level up
-			if t.mode == "browser" {
-				lastInd := strings.LastIndex(t.curfolder, "/")
-				t.curfolder = t.curfolder[:lastInd]
-
-				command := "ls " + t.curfolder
-			
-				footer := "\nAvailable functions\n" +
-					"- Enter : open selected folder or file\n" +
-					"- b     : one level up\n" +
-					"- e     : execute selected file\n" +
-					"- m     : return to mode selection\n" +
-					"- q     : quit"
-				return t, tea.Cmd(func() tea.Msg {
-					return runCmd(command, footer)
-				})
-			}
-
-		case "c":
-			// if in mode git online, clone the selected repositories
-			if t.mode == "git online" {
-				command := "echo cloning repository "
-				for i := range t.selected {
-					command += t.selected[i] + 
-					"; git clone https://github.com/" +
-					t.configs["gituser"]+ "/" +
-					t.selected[i] +
-					" " + t.configs["gitfolder"] + "/" +
-					t.selected[i] +
-					"; "
-				}
-				return t,tea.ExecProcess(exec.Command("bash", "-c", command), nil)
-			}
-
-		case "p":
-			// if in mode git offline, push selected repositories
-			if t.mode == "git offline" {
-				command := "echo pushing repository "
-				for i := range t.selected {
-					command += t.selected[i] + 
-						"; cd " +
-						t.configs["gitfolder"] + "/" +
-						t.selected[i] + 
-						"; git add .; " +
-						"git commit -m " +
-						"'pushed by linutil'" + 
-						"; git push; "
-				}
-				return t, tea.ExecProcess(exec.Command("bash", "-c", command),nil)
-			}
-			
-		// These keys should exit the program.
-		case "ctrl+c", "q":
-			return t, tea.Quit
-
-		// The "up" keys move the cursor up
-		case "up":
-			if t.cursor > 0 {
-				t.cursor--
-			}
-
-			// The "down" keys move the cursor down
-		case "down":
-			if t.cursor < len(t.listitems)-1 {
-				t.cursor++
-			}
-
-		// The spacebar (a literal space) toggle
-		// the selected state for the item that the cursor is pointing at.
-		case " ":
-			_, ok := t.selected[t.cursor]
-			if ok {
-				delete(t.selected, t.cursor)
-			} else {
-				t.selected[t.cursor] = t.listitems[t.cursor]
-			}
-
-		// enter --> perform action according to selected entries
-		case "enter":
-			// if operational mode is not set
-			if t.mode == "" {
-				for i := range t.selected {
-					t.mode = t.selected[i]
-				}
-			}
-			if t.mode == "git online" {
-				// get online repositories
-				command := "curl https://api.github.com/users/nomispaz/repos | grep full_name | cut -d':' -f 2 | cut -d'\"' -f 2 | cut -d'/' -f 2"
-				footer := "\nAvailable functions\n" +
-					"- c     : clone selected repos\n" +
-					"- m     : return to mode selection\n" +
-					"- q     : quit"
-
-				return t, tea.Cmd(func() tea.Msg {
-					return runCmd(command, footer)
-				})
-			}
-			if t.mode == "git offline" {
-				// get repositories already downloaded to gitfolder
-				command := "ls " +
-					t.configs["gitfolder"]
-				footer := "\nAvailable functions\n" +
-					"- p     : push selected repos\n" +
-					"- m     : return to mode selection\n" +
-					"- q     : quit"
-
-				return t, tea.Cmd(func() tea.Msg {
-					return runCmd(command, footer)
-				})
-			}
-			if t.mode == "browser" {
-				command := "ls "
-				if t.curfolder == "" {
-					t.curfolder = t.configs["defaultfolder"]
-					command += t.curfolder
-				} else {
-					for i := range t.selected {
-						t.curfolder = t.curfolder + "/" +
-						t.selected[i]
-						command += t.curfolder
+					} else {
+						if !strings.HasPrefix(strings.Trim(msg, ""), "[sudo]") {
+							output = output + "\n" + msg
+							t.contents.SetText(output)
+							t.app.ForceDraw()
+						}
 					}
+
 				}
-				footer := "\nAvailable functions\n" +
-					"- Enter : open selected folder or file\n" +
-					"- b     : one level up\n" +
-					"- e     : execute selected file\n" +
-					"- m     : return to mode selection\n" +
-					"- q     : quit"
-				return t, tea.Cmd(func() tea.Msg {
-					return runCmd(command, footer)
-				})
+				break
 			}
 		}
-	
-	}
-	// Return the updated model to the Bubble Tea runtime for processing.
-	// Note that we're not returning a command.
-	return t, nil
+		t.state.command = "none"
+	}()
 }
 
-func (t *Tui) View() string {
-	// The header
-	s := t.header
+func execCmd(c chan string, command string) {
+	cmd := exec.Command("bash", "-c", command)
 
-	// Iterate over listitems
-	for i, choice := range t.listitems {
+	// create a pipe for stdout
+	stdout, _ := cmd.StdoutPipe()
+	// combine outputs of stderr and stdout
+	cmd.Stderr = cmd.Stdout
+	cmd.Start()
 
-		// Is the cursor pointing at this choice?
-		cursor := " " // no cursor
-		if t.cursor == i {
-			cursor = ">" // cursor!
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		c <- scanner.Text()
+	}
+
+	cmd.Wait()
+	// to prevent deadlock panic after the function finished
+	close(c)
+}
+
+// test documentation
+func CreateApplication() *Tui {
+	return new(Tui)
+}
+
+func (t *Tui) Keybindings() {
+
+	t.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+
+		// if key is ESC, switch back to root page
+		case tcell.KeyEsc:
+			t.pages.SendToFront("flex")
+		case tcell.KeyRune:
+			switch event.Rune() {
+			// execute selected script
+			// only if file was selected
+			case 'q':
+				t.app.Stop()
+
+			case 'c':
+				// execute commend
+				go t.handle_sudo_cmd()
+			}
 		}
-
-		// Is this choice selected?
-		checked := " " // not selected
-		if _, ok := t.selected[i]; ok {
-			checked = "x" // selected!
-		}
-
-		// Render the row
-		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
-	}
-
-	// The footer
-	s += t.footer
-	// Send the UI for rendering
-	return s
+		return event
+	})
 }
 
-//////////////////////////////////////////////////////////////////////////////////
-
-// parseconfigfile: read config file from users configdir and parse settings
-func parseconfigfile() map[string]string {
-
-	configs := make(map[string]string)
-
-	configdir, err := os.UserConfigDir()
-
-	if err != nil {
-		fmt.Println("No configfile found")
-	}
-	
-	fileContent, err := os.ReadFile(configdir + "/linutil/config")
-	
-	if err != nil {
-		panic(err)
-	}
-
-	// split file at endline
-	fileContent_split := strings.Fields(string(fileContent))
-	
-	for _, s := range fileContent_split {
-		// split row at = sign
-		row_split := strings.Split(s, "=")
-		configs[row_split[0]] = row_split[1]
-	}
-
-	return configs
-}
-// used to run commands that are parsed and returned to update the view
-func runCmd(command string, footer string) tea.Msg {
-	cmd, err := exec.Command("bash", "-c", command).Output()
-	if err != nil {
-		panic(err)
-	}
-	
-	// convert result byte to string and split at newline
-	result := string(cmd)
-	result_split := strings.Fields(result)
-
-	return updateMsg{
-		listitems: result_split,
-		selected:  make(map[int]string),
-		cursor: 0,
-		footer: footer,
-	}
-}
-
-// ////////////////////////////////////////////////////////////////////////////////
-//
-// main function
 func main() {
 
-	userhome, _ := os.UserHomeDir()
+	tui := CreateApplication()
+	tui.Init()
+	tui.SetupTUI()
+	tui.Keybindings()
 
-	m := initTui()
-	m.footer += "- q     : quit\n"
-	m.footer += "- Enter : execute selected item\n"
-
-	m.userhome = userhome
-
-	p := tea.NewProgram(&m)
-	_, err := p.Run()
-	if err != nil {
-		fmt.Printf("Program ended unexpectedly due to: %v", err)
-		os.Exit(1)
+	if err := tui.app.SetRoot(tui.pages, true).EnableMouse(true).Run(); err != nil {
+		panic(err)
 	}
+
 }
