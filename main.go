@@ -280,12 +280,11 @@ func (t *Tui) Keybindings() {
 		// if key is ESC, switch back to root page
 		case tcell.KeyEsc:
 			t.pages.SendToFront("flex")
+		case tcell.KeyCtrlC:
+			t.app.Stop()
 		case tcell.KeyRune:
 			switch event.Rune() {
-			// close the app
-			case 'q':
-				t.app.Stop()
-			// execute command
+					// execute command
 			case 'c':
 				go t.handle_sudo_cmd("echo %s | sudo -S ls -l")
 			}
