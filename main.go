@@ -141,7 +141,7 @@ func (t *Tui) GetTextFromListItem() {
 					var c = make(chan string)
 					// execute the command and feed password to command. The command returns each outut line via channel
 					//go execCmd(c, , t.state.password), "both")
-					go execCmd(c, fmt.Sprintf("pushd /home/simonheise/git_repos/%s; git add .; git commit -m \"%s\"; git push https://nomispaz:%s@github.com/nomispaz/%s; popd", current_item_text1, "Test", t.state.password, current_item_text1), "both")
+					go execCmd(c, fmt.Sprintf("pushd /home/simonheise/git_repos/%s; git add .; git commit -m \"%s\"; git push --progress https://nomispaz:%s@github.com/nomispaz/%s; popd", current_item_text1, "Test", t.state.password, current_item_text1), "both")
 
 					var output = ""
 
