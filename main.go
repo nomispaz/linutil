@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os/exec"
-	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -111,7 +110,6 @@ func (t *Tui) GetTextFromListItem() {
 			for msg := range c {
 				t.menu.AddItem(msg, "", '-', t.GetTextFromListItem)
 				t.app.ForceDraw()
-
 			}
 		}
 	case Clone:
@@ -130,17 +128,36 @@ func (t *Tui) GetTextFromListItem() {
 		}
 	case Push:
 		t.contents.Clear()
-		c := make(chan string)
 		//push the repo
-		command := fmt.Sprintf("pushd /home/simonheise/git_repos/%s; git add .; git commit -m \"%s\"; git push; popd", current_item_text1, "Test")
-		go execCmd(c, command, "both")
-		var output = ""
-		// loop through channel of cmd ouput
-		for msg := range c {
-			output += output + "\n" + msg
-			t.contents.SetText(output)
-			t.app.ForceDraw()
-		}
+		t.pages.SendToFront("password")
+		t.app.ForceDraw()
+
+		// wait for password to be entered
+		go func() {
+			for {
+				// if the password was entered, continue
+				if t.state.password != "none" {
+
+					var c = make(chan string)
+					// execute the command and feed password to command. The command returns each outut line via channel
+					//go execCmd(c, , t.state.password), "both")
+					go execCmd(c, fmt.Sprintf("pushd /home/simonheise/git_repos/%s; git add .; git commit -m \"%s\"; git push https://nomispaz:%s@github.com/nomispaz/%s; popd", current_item_text1, "Test", t.state.password, current_item_text1), "both")
+
+					var output = ""
+
+					// loop through channel of cmd ouput
+					for msg := range c {
+						output = output + "\n" + msg
+						t.contents.SetText(output)
+						t.app.ForceDraw()
+					}
+					break
+				}
+
+			}
+
+			t.state.command = "none"
+		}()
 	}
 }
 
@@ -194,7 +211,7 @@ func (t *Tui) SetupTUI() {
 }
 
 // wrapper to execute comands that require a sudo password
-func (t *Tui) handle_sudo_cmd() {
+func (t *Tui) handle_sudo_cmd(command string) {
 	// show the password prompt
 	t.pages.SendToFront("password")
 	t.app.ForceDraw()
@@ -207,33 +224,22 @@ func (t *Tui) handle_sudo_cmd() {
 
 				var c = make(chan string)
 				// execute the command and feed password to command. The command returns each outut line via channel
-				go execCmd(c, fmt.Sprintf("echo %s | sudo -S ls -l", t.state.password), "both")
+				//go execCmd(c, , t.state.password), "both")
+				go execCmd(c, fmt.Sprintf(command, t.state.password), "both")
 
 				var output = ""
 
 				// loop through channel of cmd ouput
 				for msg := range c {
-
-					if msg == "[sudo] password for root: Sorry, try again." {
-						// the password was not correct
-						t.contents.SetText("Password was not correct, retry.")
-						t.state.password = "none"
-						t.app.ForceDraw()
-						break
-
-					} else {
-						// the password was correct and the results are shown in the contents widget
-						if !strings.HasPrefix(strings.Trim(msg, ""), "[sudo]") {
-							output = output + "\n" + msg
-							t.contents.SetText(output)
-							t.app.ForceDraw()
-						}
-					}
-
+					output = output + "\n" + msg
+					t.contents.SetText(output)
+					t.app.ForceDraw()
 				}
 				break
 			}
+
 		}
+
 		t.state.command = "none"
 	}()
 }
@@ -281,7 +287,7 @@ func (t *Tui) Keybindings() {
 				t.app.Stop()
 			// execute command
 			case 'c':
-				go t.handle_sudo_cmd()
+				go t.handle_sudo_cmd("echo %s | sudo -S ls -l")
 			}
 		}
 		return event

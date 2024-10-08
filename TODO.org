@@ -1,8 +1,10 @@
 TODO
   - [X] Create enum for operation mode
-  - [ ] populate menu according to operation mode
-  - [ ] clone repos
-  - [ ] push repos
+  - [X] populate menu according to operation mode
+  - [X] clone repos
+  - [ ] push repos [0%]
+    - [ ] popup for user
+    - [ ] popup for password
   - [ ] include configfile
   - [ ] put functions, ui and structs into different files [0%]
     - [ ] functions
