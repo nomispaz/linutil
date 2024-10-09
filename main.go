@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os/exec"
+	"sync"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -29,9 +30,29 @@ func (m Mode) EnumIndex() int {
 	return int(m)
 }
 
+type Popup_type int
+
+const (
+	User Popup_type = iota + 1 // EnumIndex = 1
+	Sudo
+	Password
+)
+
+// String - Creating common behavior - give the type a String function
+func (p Popup_type) String() string {
+	return [...]string{"User", "User", "Password"}[p-1]
+}
+
+// EnumIndex - Creating common behavior - give the type a EnumIndex function
+func (p Popup_type) EnumIndex() int {
+	return int(p)
+}
+
 // struct to save some variables that should be accessed from functions
 type State struct {
 	password string
+	user     string
+	input    string
 	command  string
 	mode     Mode
 }
@@ -40,17 +61,17 @@ type State struct {
 type Tui struct {
 	state State
 
-	app             *tview.Application
-	flex            *tview.Flex
-	flexTop         *tview.Flex
-	flexBottom      *tview.Flex
-	flexLeftCol     *tview.Flex
-	flexRightCol    *tview.Flex
-	modal           *tview.Modal
-	pages           *tview.Pages
-	menu            *tview.List
-	contents        *tview.TextView
-	password_prompt *tview.InputField
+	app          *tview.Application
+	flex         *tview.Flex
+	flexTop      *tview.Flex
+	flexBottom   *tview.Flex
+	flexLeftCol  *tview.Flex
+	flexRightCol *tview.Flex
+	modal        *tview.Modal
+	pages        *tview.Pages
+	menu         *tview.List
+	contents     *tview.TextView
+	input_popup  *tview.InputField
 }
 
 // Initiate the Tui (variables and widgets)
@@ -58,6 +79,8 @@ func (t *Tui) Init() {
 
 	t.state.password = "none"
 	t.state.command = "none"
+	t.state.user = "none"
+	t.state.input = "none"
 	t.state.mode = None
 
 	t.app = tview.NewApplication()
@@ -67,7 +90,7 @@ func (t *Tui) Init() {
 	t.flexLeftCol = tview.NewFlex()
 	t.flexRightCol = tview.NewFlex()
 	t.pages = tview.NewPages()
-	t.password_prompt = tview.NewInputField()
+	t.input_popup = tview.NewInputField()
 }
 
 // get mode from list item
@@ -129,34 +152,34 @@ func (t *Tui) GetTextFromListItem() {
 	case Push:
 		t.contents.Clear()
 		//push the repo
-		t.pages.SendToFront("password")
-		t.app.ForceDraw()
 
-		// wait for password to be entered
+		c := make(chan string)
+		var wgp sync.WaitGroup
+		wgp.Add(1)
+		var wgu sync.WaitGroup
+		wgu.Add(1)
+
+		// open the input popup
+		go t.OpenPopup(&wgu, &wgp, User)
+
+		go t.OpenPopup(&wgu, &wgp, Password)
+
 		go func() {
-			for {
-				// if the password was entered, continue
-				if t.state.password != "none" {
+			// wait for the input popup to close
+			wgp.Wait()
 
-					var c = make(chan string)
-					// execute the command and feed password to command. The command returns each outut line via channel
-					//go execCmd(c, , t.state.password), "both")
-					go execCmd(c, fmt.Sprintf("pushd /home/simonheise/git_repos/%s; git add .; git commit -m \"%s\"; git push --progress https://nomispaz:%s@github.com/nomispaz/%s; popd", current_item_text1, "Test", t.state.password, current_item_text1), "both")
+			go execCmd(c, fmt.Sprintf("pushd /home/simonheise/git_repos/%s; git add .; git commit -m \"%s\"; git push --progress https://%s:%s@github.com/nomispaz/%s; popd", current_item_text1, "Test", t.state.user, t.state.password, current_item_text1), "both")
 
-					var output = ""
+			var output = ""
 
-					// loop through channel of cmd ouput
-					for msg := range c {
-						output = output + "\n" + msg
-						t.contents.SetText(output)
-						t.app.ForceDraw()
-					}
-					break
-				}
-
+			for msg := range c {
+				output = output + "\n" + msg
+				t.contents.SetText(msg)
+				t.app.ForceDraw()
 			}
-
-			t.state.command = "none"
+			t.state.password = "none"
+			t.state.user = "none"
+			t.state.password = "none"
 		}()
 	}
 }
@@ -168,9 +191,9 @@ func (t *Tui) SetupTUI() {
 	t.contents.SetTextAlign(tview.AlignLeft).SetText("").SetDynamicColors(false).SetTextColor(tcell.ColorSlateGrey).ScrollToEnd()
 
 	// define password prompt for the sudo password
-	t.password_prompt.SetLabel("Enter root password: ")
-	t.password_prompt.SetFinishedFunc(func(key tcell.Key) {
-		t.state.password = t.password_prompt.GetText()
+	t.input_popup.SetLabel("Enter root password: ")
+	t.input_popup.SetFinishedFunc(func(key tcell.Key) {
+		t.state.input = t.input_popup.GetText()
 		t.pages.SendToFront("flex")
 	})
 
@@ -203,45 +226,11 @@ func (t *Tui) SetupTUI() {
 
 	// define pages so that we are able to switch between main layout and popups
 	t.pages.
-		AddPage("password", modal(t.password_prompt, 40, 10), true, true).
+		AddPage("popup", modal(t.input_popup, 40, 10), true, true).
 		AddPage("flex", t.flex, true, true)
 
 	// start the app with the main layout shown
 	t.pages.SendToFront("flex")
-}
-
-// wrapper to execute comands that require a sudo password
-func (t *Tui) handle_sudo_cmd(command string) {
-	// show the password prompt
-	t.pages.SendToFront("password")
-	t.app.ForceDraw()
-
-	// wait for password to be entered
-	go func() {
-		for {
-			// if the password was entered, continue
-			if t.state.password != "none" {
-
-				var c = make(chan string)
-				// execute the command and feed password to command. The command returns each outut line via channel
-				//go execCmd(c, , t.state.password), "both")
-				go execCmd(c, fmt.Sprintf(command, t.state.password), "both")
-
-				var output = ""
-
-				// loop through channel of cmd ouput
-				for msg := range c {
-					output = output + "\n" + msg
-					t.contents.SetText(output)
-					t.app.ForceDraw()
-				}
-				break
-			}
-
-		}
-
-		t.state.command = "none"
-	}()
 }
 
 // execute command and return the combined stderr and stdout via pipe to a channel. Channel is closed at the end to prevend a deadlock
@@ -271,6 +260,40 @@ func CreateApplication() *Tui {
 	return new(Tui)
 }
 
+func (t *Tui) OpenPopup(wgu *sync.WaitGroup, wgp *sync.WaitGroup, popup Popup_type) {
+
+	if popup == Password {
+		wgu.Wait()
+		defer wgp.Done()
+	} else {
+		defer wgu.Done()
+	}
+
+	t.state.input = "none"
+
+	t.pages.SendToFront("popup")
+	switch popup {
+	case User:
+		t.input_popup.SetLabel("Username").SetMaskCharacter(0)
+	default:
+		t.input_popup.SetLabel("Password").SetMaskCharacter('*')
+	}
+	t.app.ForceDraw()
+
+	for {
+		if t.state.input != "none" {
+			t.pages.SendToFront("flex")
+			switch popup {
+			case User:
+				t.state.user = t.input_popup.GetText()
+			case Password:
+				t.state.password = t.input_popup.GetText()
+			}
+			break
+		}
+	}
+}
+
 // define key bindings for the tui
 func (t *Tui) Keybindings() {
 
@@ -284,9 +307,32 @@ func (t *Tui) Keybindings() {
 			t.app.Stop()
 		case tcell.KeyRune:
 			switch event.Rune() {
-					// execute command
+			// execute command
 			case 'c':
-				go t.handle_sudo_cmd("echo %s | sudo -S ls -l")
+
+				c := make(chan string)
+				var wgp sync.WaitGroup
+				wgp.Add(1)
+				var wgu sync.WaitGroup
+				wgu.Add(1)
+
+				// open the input popup
+				go t.OpenPopup(&wgu, &wgp, User)
+
+				go t.OpenPopup(&wgu, &wgp, Password)
+
+				go func() {
+					// wait for the input popup to close
+					wgp.Wait()
+
+					go execCmd(c, fmt.Sprintf("echo %s | sudo -S ls -l", t.state.password), "both")
+					for msg := range c {
+						t.contents.SetText(msg)
+						t.app.ForceDraw()
+					}
+					t.state.password = "none"
+
+				}()
 			}
 		}
 		return event
