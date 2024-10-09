@@ -150,7 +150,6 @@ func (t *Tui) GetTextFromListItem() {
 			t.app.ForceDraw()
 		}
 	case Push:
-		t.contents.Clear()
 		//push the repo
 
 		c := make(chan string)
@@ -194,7 +193,6 @@ func (t *Tui) SetupTUI() {
 	t.input_popup.SetLabel("Enter root password: ")
 	t.input_popup.SetFinishedFunc(func(key tcell.Key) {
 		t.state.input = t.input_popup.GetText()
-		t.pages.SendToFront("flex")
 	})
 
 	// hide second row for the menu items
