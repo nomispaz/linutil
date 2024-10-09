@@ -137,7 +137,6 @@ func (t *Tui) GetTextFromListItem() {
 		}
 	case Clone:
 		// mode clone --> if item is selected, it is cloned
-		t.contents.Clear()
 		c := make(chan string)
 		//clone the repo
 		command := fmt.Sprintf("git clone --progress https://github.com/nomispaz/%s /home/simonheise/git_repos/%s", current_item_text1, current_item_text1)
