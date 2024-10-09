@@ -269,6 +269,7 @@ func (t *Tui) OpenPopup(wgu *sync.WaitGroup, wgp *sync.WaitGroup, popup Popup_ty
 	}
 
 	t.state.input = "none"
+	t.input_popup.SetText("")
 
 	t.pages.SendToFront("popup")
 	switch popup {

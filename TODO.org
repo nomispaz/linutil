@@ -6,6 +6,7 @@ TODO
     - [X] popup for user
     - [X] popup for password
     - [ ] popup for commit message
+  - [X] clear text of input field after it was closed --> solution: clear when opened in OpenPopup
   - [ ] In OpenPopup func, allow to open a password prompt without waiting for userprompt
   - [ ] include configfile
   - [X] fix that linutil uses 100% cpu as soon as subprocess is spawned
