@@ -172,7 +172,7 @@ func (t *Tui) GetTextFromListItem() {
 
 			for msg := range c {
 				output = output + "\n" + msg
-				t.contents.SetText(msg)
+				t.contents.SetText(output)
 				t.app.ForceDraw()
 			}
 			t.state.password = "none"
