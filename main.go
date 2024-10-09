@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -150,7 +151,7 @@ func (t *Tui) GetTextFromListItem() {
 		}
 	case Push:
 		//push the repo
-
+		// wait groups wgp: wait for password, wgu: wait for username
 		c := make(chan string)
 		var wgp sync.WaitGroup
 		wgp.Add(1)
@@ -166,7 +167,7 @@ func (t *Tui) GetTextFromListItem() {
 			// wait for the input popup to close
 			wgp.Wait()
 
-			go execCmd(c, fmt.Sprintf("pushd /home/simonheise/git_repos/%s; git add .; git commit -m \"%s\"; git push --progress https://%s:%s@github.com/nomispaz/%s; popd", current_item_text1, "Test", t.state.user, t.state.password, current_item_text1), "both")
+			go execCmd(c, fmt.Sprintf("pushd /home/simonheise/git_repos/%s; git add .; git commit -m \"%s\"; git push --progress https://%s:%s@github.com/nomispaz/%s; popd", current_item_text1, "fixed 100% cpu usage", t.state.user, t.state.password, current_item_text1), "both")
 
 			var output = ""
 
@@ -259,6 +260,7 @@ func CreateApplication() *Tui {
 
 func (t *Tui) OpenPopup(wgu *sync.WaitGroup, wgp *sync.WaitGroup, popup Popup_type) {
 
+	// if popup is of type password, wait for the username
 	if popup == Password {
 		wgu.Wait()
 		defer wgp.Done()
@@ -272,12 +274,14 @@ func (t *Tui) OpenPopup(wgu *sync.WaitGroup, wgp *sync.WaitGroup, popup Popup_ty
 	switch popup {
 	case User:
 		t.input_popup.SetLabel("Username").SetMaskCharacter(0)
-	default:
+	case Password:
 		t.input_popup.SetLabel("Password").SetMaskCharacter('*')
 	}
 	t.app.ForceDraw()
 
 	for {
+		// sleep of 2 ms to prevent 100% cpu usage
+		time.Sleep(2*time.Millisecond)
 		if t.state.input != "none" {
 			t.pages.SendToFront("flex")
 			switch popup {
@@ -320,7 +324,7 @@ func (t *Tui) Keybindings() {
 
 				go func() {
 					// wait for the input popup to close
-					wgp.Wait()
+					wgu.Wait()
 
 					go execCmd(c, fmt.Sprintf("echo %s | sudo -S ls -l", t.state.password), "both")
 					for msg := range c {
