@@ -6,8 +6,10 @@ TODO
     - [X] popup for user
     - [X] popup for password
     - [ ] popup for commit message
+	--> solution: create dynamic popup with mutiple inputfields for all required data
   - [X] clear text of input field after it was closed --> solution: clear when opened in OpenPopup
   - [ ] In OpenPopup func, allow to open a password prompt without waiting for userprompt
+  	--> solution: create dynamic popup with mutiple inputfields for all required data
   - [ ] include configfile
   - [X] fix that linutil uses 100% cpu as soon as subprocess is spawned
   - [ ] put functions, ui and structs into different files [0%]

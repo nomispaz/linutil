@@ -31,12 +31,29 @@ func (m Mode) EnumIndex() int {
 	return int(m)
 }
 
+type Field_type int
+
+const (
+	Show Field_type = iota + 1 // EnumIndex = 1
+	Hide
+)
+
+// String - Creating common behavior - give the type a String function
+func (f Field_type) String() string {
+	return [...]string{"Show", "Hide"}[f-1]
+}
+
+// EnumIndex - Creating common behavior - give the type a EnumIndex function
+func (f Field_type) EnumIndex() int {
+	return int(f)
+}
+
 type Popup_type int
 
 const (
 	User Popup_type = iota + 1 // EnumIndex = 1
 	Sudo
-	Password
+	//Password
 )
 
 // String - Creating common behavior - give the type a String function
@@ -51,11 +68,12 @@ func (p Popup_type) EnumIndex() int {
 
 // struct to save some variables that should be accessed from functions
 type State struct {
-	password string
-	user     string
-	input    string
-	command  string
-	mode     Mode
+	password   string
+	user       string
+	commit_msg string
+	input      string
+	command    string
+	mode       Mode
 }
 
 // struct that contains the definition of the Tui (variables and widgets)
@@ -68,11 +86,17 @@ type Tui struct {
 	flexBottom   *tview.Flex
 	flexLeftCol  *tview.Flex
 	flexRightCol *tview.Flex
-	modal        *tview.Modal
-	pages        *tview.Pages
-	menu         *tview.List
-	contents     *tview.TextView
-	input_popup  *tview.InputField
+
+	flexPopup         *tview.Flex
+	flexPopupUsername *tview.InputField
+	flexPopupPassword *tview.InputField
+	flexPopupCommit   *tview.InputField
+
+	modal       *tview.Modal
+	pages       *tview.Pages
+	menu        *tview.List
+	contents    *tview.TextView
+	input_popup *tview.InputField
 }
 
 // Initiate the Tui (variables and widgets)
@@ -81,6 +105,7 @@ func (t *Tui) Init() {
 	t.state.password = "none"
 	t.state.command = "none"
 	t.state.user = "none"
+	t.state.commit_msg = "none"
 	t.state.input = "none"
 	t.state.mode = None
 
@@ -90,6 +115,12 @@ func (t *Tui) Init() {
 	t.flex = tview.NewFlex()
 	t.flexLeftCol = tview.NewFlex()
 	t.flexRightCol = tview.NewFlex()
+
+	t.flexPopup = tview.NewFlex()
+	t.flexPopupUsername = tview.NewInputField()
+	t.flexPopupPassword = tview.NewInputField()
+	t.flexPopupCommit = tview.NewInputField()
+
 	t.pages = tview.NewPages()
 	t.input_popup = tview.NewInputField()
 }
@@ -161,7 +192,7 @@ func (t *Tui) GetTextFromListItem() {
 		// open the input popup
 		go t.OpenPopup(&wgu, &wgp, User)
 
-		go t.OpenPopup(&wgu, &wgp, Password)
+		go t.OpenPopup(&wgu, &wgp, User)
 
 		go func() {
 			// wait for the input popup to close
@@ -192,7 +223,9 @@ func (t *Tui) SetupTUI() {
 	// define password prompt for the sudo password
 	t.input_popup.SetLabel("Enter root password: ")
 	t.input_popup.SetFinishedFunc(func(key tcell.Key) {
-		t.state.input = t.input_popup.GetText()
+		if key == tcell.KeyEnter {
+			t.state.input = t.input_popup.GetText()
+		}
 	})
 
 	// hide second row for the menu items
@@ -222,9 +255,11 @@ func (t *Tui) SetupTUI() {
 		AddItem(t.flexLeftCol, 0, 1, true).
 		AddItem(t.flexRightCol, 0, 3, false)
 
+	t.flexPopup.SetDirection(tview.FlexRow)
+
 	// define pages so that we are able to switch between main layout and popups
 	t.pages.
-		AddPage("popup", modal(t.input_popup, 40, 10), true, true).
+		AddPage("popup", modal(t.flexPopup, 40, 10), true, true).
 		AddPage("flex", t.flex, true, true)
 
 	// start the app with the main layout shown
@@ -258,39 +293,121 @@ func CreateApplication() *Tui {
 	return new(Tui)
 }
 
+func (t *Tui) InputPage(wg *sync.WaitGroup, username Field_type, password Field_type, commit Field_type) {
+	defer wg.Done()
+
+	number_inputfields := 0
+
+	t.flexPopup.Clear()
+	t.state.user = "none"
+	t.state.password = "none"
+	t.state.commit_msg = "none"
+
+	if username == Show {
+		t.flexPopupUsername.SetLabel("Enter username: ")
+		t.flexPopupUsername.SetDoneFunc(func(key tcell.Key) {
+			t.state.user = t.flexPopupUsername.GetText()
+			if commit == Show {
+				t.app.SetFocus(t.flexPopupCommit)
+			}
+			if password == Show {
+				t.app.SetFocus(t.flexPopupPassword)
+			}
+		})
+
+		t.flexPopup.AddItem(t.flexPopupUsername, 0, 1, true)
+		number_inputfields += 1
+	}
+	if password == Show {
+		t.flexPopupPassword.SetLabel("Enter password: ")
+		t.flexPopupPassword.SetMaskCharacter('*')
+		t.flexPopupPassword.SetDoneFunc(func(key tcell.Key) {
+			t.state.password = t.flexPopupPassword.GetText()
+			if username == Show {
+				t.app.SetFocus(t.flexPopupUsername)
+			}
+			if commit == Show {
+				t.app.SetFocus(t.flexPopupCommit)
+			}
+		})
+
+		t.flexPopup.AddItem(t.flexPopupPassword, 0, 1, false)
+		if number_inputfields == 0 {
+			t.app.SetFocus(t.flexPopupPassword)
+		}
+		number_inputfields += 1
+	}
+	if commit == Show {
+		t.flexPopupCommit.SetLabel("Enter commit message: ")
+		t.flexPopupCommit.SetDoneFunc(func(key tcell.Key) {
+			t.state.commit_msg = t.flexPopupCommit.GetText()
+			if password == Show {
+				t.app.SetFocus(t.flexPopupPassword)
+			}
+			if username == Show {
+				t.app.SetFocus(t.flexPopupUsername)
+			}
+		})
+
+		t.flexPopup.AddItem(t.flexPopupCommit, 0, 1, false)
+		if number_inputfields == 0 {
+			t.app.SetFocus(t.flexPopupCommit)
+		}
+
+	}
+
+	t.pages.SendToFront("popup")
+
+	for {
+		// sleep of 2 ms to prevent 100% cpu usage
+		time.Sleep(2 * time.Millisecond)
+		if t.state.commit_msg != "none" {
+			t.pages.SendToFront("flex")
+			//switch popup {
+			//case User:
+			//	t.state.user = t.input_popup.GetText()
+			//case Password:
+			//	t.state.password = t.input_popup.GetText()
+			//}
+			break
+		}
+	}
+
+}
+
 func (t *Tui) OpenPopup(wgu *sync.WaitGroup, wgp *sync.WaitGroup, popup Popup_type) {
 
 	// if popup is of type password, wait for the username
-	if popup == Password {
-		wgu.Wait()
-		defer wgp.Done()
-	} else {
-		defer wgu.Done()
-	}
+	//if popup == Password {
+	//	wgu.Wait()
+	//	defer wgp.Done()
+	//} else {
+	//	defer wgu.Done()
+	//}
 
 	t.state.input = "none"
 	t.input_popup.SetText("")
 
 	t.pages.SendToFront("popup")
-	switch popup {
-	case User:
-		t.input_popup.SetLabel("Username").SetMaskCharacter(0)
-	case Password:
-		t.input_popup.SetLabel("Password").SetMaskCharacter('*')
-	}
-	t.app.ForceDraw()
+	//switch popup {
+	//case User:
+	//	t.input_popup.SetLabel("Username").SetMaskCharacter(0)
+	//case Password:
+	//	t.input_popup.SetLabel("Password").SetMaskCharacter('*')
+	//}
+	//t.app.ForceDraw()
 
 	for {
 		// sleep of 2 ms to prevent 100% cpu usage
-		time.Sleep(2*time.Millisecond)
+		time.Sleep(2 * time.Millisecond)
 		if t.state.input != "none" {
 			t.pages.SendToFront("flex")
-			switch popup {
-			case User:
-				t.state.user = t.input_popup.GetText()
-			case Password:
-				t.state.password = t.input_popup.GetText()
-			}
+			//switch popup {
+			//case User:
+			//	t.state.user = t.input_popup.GetText()
+			//case Password:
+			//	t.state.password = t.input_popup.GetText()
+			//}
 			break
 		}
 	}
@@ -312,20 +429,26 @@ func (t *Tui) Keybindings() {
 			// execute command
 			case 'c':
 
+				var wg sync.WaitGroup
+				i := 10
+				fmt.Println(i)
+				wg.Add(1)
+				go t.InputPage(&wg, Show, Show, Hide)
+
 				c := make(chan string)
-				var wgp sync.WaitGroup
-				wgp.Add(1)
-				var wgu sync.WaitGroup
-				wgu.Add(1)
+				//var wgp sync.WaitGroup
+				//wgp.Add(1)
+				//var wgu sync.WaitGroup
+				//wgu.Add(1)
 
-				// open the input popup
-				go t.OpenPopup(&wgu, &wgp, User)
+				//// open the input popup
+				//go t.OpenPopup(&wgu, &wgp, User)
 
-				go t.OpenPopup(&wgu, &wgp, Password)
+				//go t.OpenPopup(&wgu, &wgp, User)
 
 				go func() {
 					// wait for the input popup to close
-					wgu.Wait()
+					wg.Wait()
 
 					go execCmd(c, fmt.Sprintf("echo %s | sudo -S ls -l", t.state.password), "both")
 					for msg := range c {
