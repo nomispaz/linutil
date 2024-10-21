@@ -218,7 +218,7 @@ func (t *Tui) GetTextFromListItem() {
 
 			wg.Wait()
 
-			go execCmd(c, fmt.Sprintf("pushd /home/simonheise/git_repos/%s; git add .; git commit -m \"%s\"; git push --progress https://%s:%s@github.com/nomispaz/%s; popd", current_item_text1, "fixed 100% cpu usage", t.state.user, t.state.password, current_item_text1), "both")
+			go execCmd(c, fmt.Sprintf("pushd /home/simonheise/git_repos/%s; git add .; git commit -m \"%s\"; git push --progress https://%s:%s@github.com/nomispaz/%s; popd", current_item_text1, t.state.commit_msg, t.state.user, t.state.password, current_item_text1), "both")
 
 			var output = ""
 
@@ -459,37 +459,37 @@ func (t *Tui) Keybindings() {
 		case tcell.KeyRune:
 			switch event.Rune() {
 			// execute command
-			case 'c':
+			// case 'c':
 
-				var wg sync.WaitGroup
-				i := 10
-				fmt.Println(i)
-				wg.Add(1)
-				go t.InputPage(&wg, Show, Show, Show)
+			// var wg sync.WaitGroup
+			// i := 10
+			// fmt.Println(i)
+			// wg.Add(1)
+			// go t.InputPage(&wg, Show, Show, Show)
 
-				c := make(chan string)
-				//var wgp sync.WaitGroup
-				//wgp.Add(1)
-				//var wgu sync.WaitGroup
-				//wgu.Add(1)
+			// c := make(chan string)
+			// //var wgp sync.WaitGroup
+			// //wgp.Add(1)
+			// //var wgu sync.WaitGroup
+			// //wgu.Add(1)
 
-				//// open the input popup
-				//go t.OpenPopup(&wgu, &wgp, User)
+			// //// open the input popup
+			// //go t.OpenPopup(&wgu, &wgp, User)
 
-				//go t.OpenPopup(&wgu, &wgp, User)
+			// //go t.OpenPopup(&wgu, &wgp, User)
 
-				go func() {
-					// wait for the input popup to close
-					wg.Wait()
+			// go func() {
+			// 	// wait for the input popup to close
+			// 	wg.Wait()
 
-					go execCmd(c, fmt.Sprintf("echo %s | sudo -S ls -l", t.state.password), "both")
-					for msg := range c {
-						t.contents.SetText(msg)
-						t.app.ForceDraw()
-					}
-					t.state.password = "none"
+			// 	go execCmd(c, fmt.Sprintf("echo %s | sudo -S ls -l", t.state.password), "both")
+			// 	for msg := range c {
+			// 		t.contents.SetText(msg)
+			// 		t.app.ForceDraw()
+			// 	}
+			// 	t.state.password = "none"
 
-				}()
+			// }()
 			}
 		}
 		return event
