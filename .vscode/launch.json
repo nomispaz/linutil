@@ -3,8 +3,8 @@
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
 
-    // run dlv 
-    //debug --headless --listen=127.0.0.1:38697 --log --log-output=dap
+    // run  
+    //dlv debug --headless --listen=127.0.0.1:38697 --log --log-output=dap
     //in external terminal. Output will be shown there
 
     "version": "0.2.0",

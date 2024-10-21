@@ -66,6 +66,17 @@ func (p Popup_type) EnumIndex() int {
 	return int(p)
 }
 
+func createTuple(values ...interface{}) []interface{} {
+	return values
+}
+
+func getElement(tuple []interface{}, index int) interface{} {
+	if index >= len(tuple) || index < 0 {
+		panic("Index out of range")
+	}
+	return tuple[index]
+}
+
 // struct to save some variables that should be accessed from functions
 type State struct {
 	password   string
@@ -184,19 +195,28 @@ func (t *Tui) GetTextFromListItem() {
 		//push the repo
 		// wait groups wgp: wait for password, wgu: wait for username
 		c := make(chan string)
-		var wgp sync.WaitGroup
-		wgp.Add(1)
-		var wgu sync.WaitGroup
-		wgu.Add(1)
+		//var wgp sync.WaitGroup
+		//wgp.Add(1)
+		//var wgu sync.WaitGroup
+		//wgu.Add(1)
 
-		// open the input popup
-		go t.OpenPopup(&wgu, &wgp, User)
+		//// open the input popup
+		//go t.OpenPopup(&wgu, &wgp, User)
 
-		go t.OpenPopup(&wgu, &wgp, User)
+		//go t.OpenPopup(&wgu, &wgp, User)
+
+		//go func() {
+		//	// wait for the input popup to close
+		//	wgp.Wait()
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		go t.InputPage(&wg, Show, Show, Show)
 
 		go func() {
-			// wait for the input popup to close
-			wgp.Wait()
+
+			wg.Wait()
 
 			go execCmd(c, fmt.Sprintf("pushd /home/simonheise/git_repos/%s; git add .; git commit -m \"%s\"; git push --progress https://%s:%s@github.com/nomispaz/%s; popd", current_item_text1, "fixed 100% cpu usage", t.state.user, t.state.password, current_item_text1), "both")
 
@@ -297,6 +317,7 @@ func (t *Tui) InputPage(wg *sync.WaitGroup, username Field_type, password Field_
 	defer wg.Done()
 
 	number_inputfields := 0
+	var inputvalues = make(map[string]string)
 
 	t.flexPopup.Clear()
 	t.state.user = "none"
@@ -307,6 +328,7 @@ func (t *Tui) InputPage(wg *sync.WaitGroup, username Field_type, password Field_
 		t.flexPopupUsername.SetLabel("Enter username: ")
 		t.flexPopupUsername.SetDoneFunc(func(key tcell.Key) {
 			t.state.user = t.flexPopupUsername.GetText()
+			inputvalues["user"] = t.state.user
 			if commit == Show {
 				t.app.SetFocus(t.flexPopupCommit)
 			}
@@ -317,12 +339,14 @@ func (t *Tui) InputPage(wg *sync.WaitGroup, username Field_type, password Field_
 
 		t.flexPopup.AddItem(t.flexPopupUsername, 0, 1, true)
 		number_inputfields += 1
+		inputvalues["user"] = ""
 	}
 	if password == Show {
 		t.flexPopupPassword.SetLabel("Enter password: ")
 		t.flexPopupPassword.SetMaskCharacter('*')
 		t.flexPopupPassword.SetDoneFunc(func(key tcell.Key) {
 			t.state.password = t.flexPopupPassword.GetText()
+			inputvalues["password"] = t.state.password
 			if username == Show {
 				t.app.SetFocus(t.flexPopupUsername)
 			}
@@ -336,11 +360,13 @@ func (t *Tui) InputPage(wg *sync.WaitGroup, username Field_type, password Field_
 			t.app.SetFocus(t.flexPopupPassword)
 		}
 		number_inputfields += 1
+		inputvalues["password"] = ""
 	}
 	if commit == Show {
 		t.flexPopupCommit.SetLabel("Enter commit message: ")
 		t.flexPopupCommit.SetDoneFunc(func(key tcell.Key) {
 			t.state.commit_msg = t.flexPopupCommit.GetText()
+			inputvalues["commit"] = t.state.commit_msg
 			if password == Show {
 				t.app.SetFocus(t.flexPopupPassword)
 			}
@@ -353,26 +379,32 @@ func (t *Tui) InputPage(wg *sync.WaitGroup, username Field_type, password Field_
 		if number_inputfields == 0 {
 			t.app.SetFocus(t.flexPopupCommit)
 		}
+		number_inputfields += 1
+		inputvalues["commit"] = ""
 
 	}
 
 	t.pages.SendToFront("popup")
 
+	// if all inputfields are filled, close the popup
+	input_done := false
+
 	for {
 		// sleep of 2 ms to prevent 100% cpu usage
 		time.Sleep(2 * time.Millisecond)
-		if t.state.commit_msg != "none" {
+
+		input_done = true
+		for _, input := range inputvalues {
+			if input == "" {
+				input_done = false
+			}
+		}
+
+		if input_done {
 			t.pages.SendToFront("flex")
-			//switch popup {
-			//case User:
-			//	t.state.user = t.input_popup.GetText()
-			//case Password:
-			//	t.state.password = t.input_popup.GetText()
-			//}
 			break
 		}
 	}
-
 }
 
 func (t *Tui) OpenPopup(wgu *sync.WaitGroup, wgp *sync.WaitGroup, popup Popup_type) {
@@ -433,7 +465,7 @@ func (t *Tui) Keybindings() {
 				i := 10
 				fmt.Println(i)
 				wg.Add(1)
-				go t.InputPage(&wg, Show, Show, Hide)
+				go t.InputPage(&wg, Show, Show, Show)
 
 				c := make(chan string)
 				//var wgp sync.WaitGroup
