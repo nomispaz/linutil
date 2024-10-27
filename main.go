@@ -339,7 +339,7 @@ func main() {
 	// Read patch configuration
 	configFilePath := "~/.config/linutil/configs/config.json"
 	config = read_config(configFilePath)
-
+	
 	tui := CreateApplication()
 	tui.Init()
 	tui.SetupTUI()
