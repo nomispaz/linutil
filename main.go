@@ -118,6 +118,7 @@ func (t *Tui) InputPage(wg *sync.WaitGroup, username Field_type, password Field_
 		number_inputfields += 1
 		inputvalues["password"] = ""
 	}
+	
 	if commit == Show {
 		t.flexPopupCommit.SetLabel("Enter commit message: ")
 		t.flexPopupCommit.SetDoneFunc(func(key tcell.Key) {
